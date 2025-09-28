@@ -1,7 +1,6 @@
 #include "ft_nmap.h"
 
 void init_config(t_config *config) {
-
     config->ip_target = NULL;
     config->file = NULL;
     config->ports = NULL;
@@ -10,7 +9,12 @@ void init_config(t_config *config) {
     config->port_count = 0;
     config->scan_flags = 0;
 
+    /* Targets */
+    config->target_count = 0;
+    for (int i = 0; i < MAX_TARGETS; ++i)
+        config->targets[i] = NULL;
 }
+
 
 void print_help(void) {
     printf("Usage: ./ft_nmap [OPTIONS]\n");
@@ -47,15 +51,24 @@ int parse_arguments(int argc, char **argv, t_config *config) {
 
             if (strcmp(opt_name, "help") == 0) {
                 print_help();
-                return 0;
+                /* stop the program after printing help */
+                exit(EXIT_SUCCESS);
             } else if (strcmp(opt_name, "ip") == 0) {
-                config->ip_target = optarg;
+                free(config->ip_target);
+                config->ip_target = strdup(optarg);
+                if (!config->ip_target) { perror("strdup"); return 1; }
             } else if (strcmp(opt_name, "file") == 0) {
-                config->file = optarg;
+                free(config->file);
+                config->file = strdup(optarg);
+                if (!config->file) { perror("strdup"); return 1; }
             } else if (strcmp(opt_name, "ports") == 0) {
-                config->ports = optarg;
+                free(config->ports);
+                config->ports = strdup(optarg);
+                if (!config->ports) { perror("strdup"); return 1; }
             } else if (strcmp(opt_name, "scan") == 0) {
-                config->scan_type = optarg;
+                free(config->scan_type);
+                config->scan_type = strdup(optarg);
+                if (!config->scan_type) { perror("strdup"); return 1; }
             } else if (strcmp(opt_name, "speedup") == 0) {
                 config->speedup = atoi(optarg);
             }
@@ -105,13 +118,23 @@ int parse_arguments(int argc, char **argv, t_config *config) {
     return 0;
 }
 
+static char *trim(char *s) {
+    while (*s && isspace((unsigned char)*s)) s++;
+    if (*s == 0) return s;
+    char *end = s + strlen(s) - 1;
+    while (end > s && isspace((unsigned char)*end)) *end-- = '\0';
+    return s;
+}
+
 int parse_ports(const char *port_str, int *ports_array, int *port_count) {
     char *input = strdup(port_str);
+    if (!input) { perror("strdup"); return -1; }
     char *token = strtok(input, ",");
 
     *port_count = 0;
 
-    while (token && *port_count < 1024) {
+    while (token && *port_count < MAX_PORTS) {
+        token = trim(token);
         if (strchr(token, '-')) {
             int start, end;
             if (sscanf(token, "%d-%d", &start, &end) == 2) {
@@ -120,9 +143,13 @@ int parse_ports(const char *port_str, int *ports_array, int *port_count) {
                     free(input);
                     return -1;
                 }
-                for (int p = start; p <= end && *port_count < 1024; p++) {
+                for (int p = start; p <= end && *port_count < MAX_PORTS; p++) {
                     ports_array[(*port_count)++] = p;
                 }
+            } else {
+                fprintf(stderr, "Invalid range format: %s\n", token);
+                free(input);
+                return -1;
             }
         } else {
             int port = atoi(token);
@@ -139,6 +166,7 @@ int parse_ports(const char *port_str, int *ports_array, int *port_count) {
     free(input);
     return 0;
 }
+
 
 int parse_scan_types(const char *scan_str, int *scan_flags) {
     char *input = strdup(scan_str);
