@@ -17,6 +17,8 @@
 #include <errno.h>
 #include <ctype.h>
 #include <limits.h>
+#include <pthread.h>
+#include <unistd.h>
 
 /* -------------------------------------------------------------------------
  * Constants
@@ -63,11 +65,22 @@ typedef struct {
 /* -------------------------------------------------------------------------
  * Tâche élémentaire (unit de travail poussée dans la queue)
  * ------------------------------------------------------------------------- */
-typedef struct {
-    char target[MAX_IP_STRLEN]; /* IPv4 en ascii */
+
+typedef struct scan_task {
+    char target[MAX_IP_STRLEN];
     uint16_t port;
     e_scan_type scan;
-} t_scan_task;
+    struct scan_task *next;
+} scan_task;
+
+typedef struct {
+    scan_task *head;
+    scan_task *tail;
+    size_t size;
+    bool closed;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} t_task_queue;
 
 /* -------------------------------------------------------------------------
  * Résultat d'un scan individuel
@@ -84,10 +97,17 @@ typedef struct {
 typedef struct {
     char target[MAX_IP_STRLEN];
     uint16_t port;
-    char service[MAX_SERVICE_NAME]; /* resolved via /etc/services ou Unassigned */
+    char service[MAX_SERVICE_NAME];
     t_scan_result results[SCAN_TYPE_MAX];
-    size_t result_count; /* nombre de résultats valides dans results[] */
+    size_t result_count;
 } t_port_report;
+
+typedef struct {
+    int id;
+    t_task_queue *queue;
+    const t_config *config;
+} t_worker_args;
+
 
 
 int parse_args(int ac, char **av, t_config *config);
@@ -96,5 +116,15 @@ void    cleanup_config(t_config *config);
 char    *trim_whistespaces(char *s);
 void    print_config(const t_config *config);
 
+int task_queue_init(t_task_queue *q);
+int populate_task_queue(t_task_queue *queue, const t_config *config);
+void task_queue_destroy(t_task_queue *q);
+int task_queue_push(t_task_queue *q, const scan_task *task);
+int task_queue_pop(t_task_queue *q, scan_task *out);
+int task_queue_try_pop(t_task_queue *q, scan_task *out);
+void task_queue_close(t_task_queue *q);
+size_t task_queue_size(t_task_queue *q);
+
+int launch_workers(t_task_queue *queue, const t_config *config);
 
 #endif

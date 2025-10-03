@@ -75,7 +75,6 @@ int parse_args(int ac, char **av, t_config *config) {
                 fprintf(stderr, "Error: failed to add target %s\n", resolved_ip);
                 return (1);
             }
-            config->target_count++;
         } else {
             fprintf(stderr, "Error: invalid IP address or domain name\n");
         }

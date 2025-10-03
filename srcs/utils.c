@@ -1,9 +1,10 @@
 #include "ft_nmap.h"
 
 void    cleanup_config(t_config *config) {
-    if (config) {
-        free(config);
-    }
+    //TODO
+    for (size_t i = 0; i < config->target_count; ++i)
+        free(config->targets[i]);
+    printf("cleaning up");
 }
 
 char *trim_whistespaces(char *s)
