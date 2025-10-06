@@ -1,4 +1,5 @@
 #include "ft_nmap.h"
+#include "packet_store.h"
 
 
 // Worker's start function
@@ -12,8 +13,20 @@ void *worker_thread_func(void *arg)
         printf("[Worker %d] Scanning %s:%d (%d)\n", args->id, task.target, task.port, task.scan);
 
         
-        // TODO: Replace with actual scan function:
-        // perform_scan(&task, args->config);
+        // ... send packet via raw socket here (not yet implemented) ...
+
+        // Build tuple to wait for
+        t_tuple tuple;
+        inet_aton(task.target, &tuple.dst);
+        tuple.src.s_addr = 0;
+        tuple.sport = task.port;
+        tuple.dport = task.port;
+        tuple.proto = (task.scan == SCAN_UDP) ? IPPROTO_UDP : IPPROTO_TCP;
+
+        bool got_reply = get_response_for(&tuple, args->config->timeout_ms);
+
+        printf("[Worker %d] %s:%u -> %s\n", args->id, task.target, task.port,
+               got_reply ? "REPLIED" : "TIMEOUT");
 
         usleep(100000);
     }

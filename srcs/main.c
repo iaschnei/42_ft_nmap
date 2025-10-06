@@ -1,4 +1,7 @@
 #include "ft_nmap.h"
+#include "packet_store.h"
+
+t_packet_store g_store; 
 
 int main(int ac, char **av) {
 
@@ -30,6 +33,8 @@ int main(int ac, char **av) {
     printf("Task queue populated with %zu tasks\n", task_queue_size(&queue));
 
     task_queue_close(&queue);
+
+    packet_store_init(&g_store);
 
     if (launch_workers(&queue, &config) != 0) {
         fprintf(stderr, "Error launching workers\n");

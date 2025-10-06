@@ -1,7 +1,8 @@
 # ---------------------------------------------------------------------------- #
 
 SRCS		=	srcs/main.c \
-				srcs/parsing.c srcs/utils.c srcs/task_queue.c srcs/workers.c
+				srcs/parsing.c srcs/utils.c srcs/task_queue.c srcs/workers.c \
+				srcs/packet_store.c srcs/capture.c
 
 # ---------------------------------------------------------------------------- #
 
