@@ -136,13 +136,10 @@ bool get_tcp_reply_info(const t_tuple *tuple, int timeout_ms,
                         uint8_t *out_flags, uint32_t *out_seq, uint32_t *out_ack)
 {
     struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += timeout_ms / 1000;
-    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
-    if (ts.tv_nsec >= 1000000000) {
-        ts.tv_sec++;
-        ts.tv_nsec -= 1000000000;
-    }
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    ts.tv_sec  += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1000000L;
+    if (ts.tv_nsec >= 1000000000L) { ts.tv_sec++; ts.tv_nsec -= 1000000000L; }
 
     //debug
     char src_str[INET_ADDRSTRLEN], dst_str[INET_ADDRSTRLEN];
@@ -169,10 +166,11 @@ bool get_tcp_reply_info(const t_tuple *tuple, int timeout_ms,
                 return true;
             }
         }
-        if (pthread_cond_timedwait(&g_store.cond, &g_store.mutex, &ts) == ETIMEDOUT) {
-            pthread_mutex_unlock(&g_store.mutex);
-            return false;
-        }
+
+        // If we timeout or there is any error, break the loop
+        int rc = pthread_cond_timedwait(&g_store.cond, &g_store.mutex, &ts);
+        if (rc == ETIMEDOUT) { pthread_mutex_unlock(&g_store.mutex); return false; }
+        if (rc != 0)         { pthread_mutex_unlock(&g_store.mutex); return false; }
     }
     // unreachable
     pthread_mutex_unlock(&g_store.mutex);

@@ -31,6 +31,25 @@ void *worker_thread_func(void *arg)
                 result_to_str(res));
 
             fflush(stdout);
+
+            // Write the report in the report table
+            pthread_mutex_lock(&g_report_mutex);
+
+            t_port_report *rep = get_or_create_report(task.target, task.port);
+            if (rep && rep->result_count < SCAN_TYPE_MAX) {
+                if (rep->service[0] == '\0') {
+                    const char *svc = resolve_service_name(task.port, st);
+                    strncpy(rep->service, svc, MAX_SERVICE_NAME - 1);
+                    rep->service[MAX_SERVICE_NAME - 1] = '\0';
+                }
+
+                t_scan_result *r = &rep->results[rep->result_count++];
+                r->scan = st;
+                r->conclusion = res;
+                r->raw_info[0] = '\0'; // TODO add details like "SYN|ACK", "RST", "timeout", etc.
+            }
+
+            pthread_mutex_unlock(&g_report_mutex);
         }
     }
 
