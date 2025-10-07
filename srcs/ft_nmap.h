@@ -109,12 +109,21 @@ typedef struct {
 } t_worker_args;
 
 
+extern t_port_report g_reports[MAX_TARGETS * MAX_PORTS];
+extern size_t g_report_count;
+extern pthread_mutex_t g_report_mutex;
+
 
 int parse_args(int ac, char **av, t_config *config);
 
+const char *result_to_str(e_scan_result res);
+const char *scan_type_to_string(e_scan_type t);
 void    cleanup_config(t_config *config);
 char    *trim_whistespaces(char *s);
 void    print_config(const t_config *config);
+const char *resolve_service_name(uint16_t port, e_scan_type scan);
+void display_report(const t_config *config);
+t_port_report *get_or_create_report(const char *target, uint16_t port);
 
 int task_queue_init(t_task_queue *q);
 int populate_task_queue(t_task_queue *queue, const t_config *config);

@@ -2,7 +2,10 @@
 #include "ft_nmap.h"
 #include "packet_store.h"
 
-t_packet_store g_store; 
+t_packet_store g_store;
+t_port_report g_reports[MAX_TARGETS * MAX_PORTS];
+size_t g_report_count = 0;
+pthread_mutex_t g_report_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int ac, char **av) {
 
@@ -52,6 +55,8 @@ int main(int ac, char **av) {
         cleanup_config(&config);
         return 1;
     }
+
+    display_report(&config);
 
     task_queue_destroy(&queue);
     capture_stop(&capture);

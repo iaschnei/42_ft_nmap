@@ -1,8 +1,6 @@
 #include "capture.h"
 #include <netinet/ether.h>
 
-static t_packet_store g_store;
-
 //This part captures every incoming packets and stores them (using packet_store_add) if they are relevant 
 //The reason for that is that workers will then be able to check stored packet to find responses to their requests
 
@@ -25,11 +23,38 @@ static void packet_handler(u_char *user, const struct pcap_pkthdr *hdr, const u_
     //Store the packet in memory based on protocol (tcp, udp or icmp)
     if (iph->ip_p == IPPROTO_TCP) {
 
-        if (hdr->caplen < sizeof(struct ether_header) + iphdr_len + sizeof(struct tcphdr)) return;
-        const struct tcphdr *tcp = (const struct tcphdr *)((const uint8_t *)iph + iphdr_len);
-        packet_store_add(&g_store, iph->ip_src, iph->ip_dst,
-                         ntohs(tcp->th_sport), ntohs(tcp->th_dport), IPPROTO_TCP);
+        if (hdr->caplen < sizeof(struct ether_header) + iphdr_len + sizeof(struct tcphdr))
+            return;
 
+        const struct tcphdr *tcp = (const struct tcphdr *)((const uint8_t *)iph + iphdr_len);
+
+        uint8_t flags = 0;
+        if (tcp->syn)  flags |= TH_SYN;
+        if (tcp->ack)  flags |= TH_ACK;
+        if (tcp->rst)  flags |= TH_RST;
+        if (tcp->fin)  flags |= TH_FIN;
+        if (tcp->psh)  flags |= TH_PUSH;
+        if (tcp->urg)  flags |= TH_URG;
+
+        //debug
+        char src_ip[INET_ADDRSTRLEN];
+        char dst_ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &iph->ip_src, src_ip, sizeof(src_ip));
+        inet_ntop(AF_INET, &iph->ip_dst, dst_ip, sizeof(dst_ip));
+        printf("[capture] TCP packet: src=%s dst=%s sport=%d dport=%d flags=0x%02x seq=%u ack=%u\n",
+            src_ip, dst_ip,
+            ntohs(tcp->th_sport), ntohs(tcp->th_dport),
+            flags,
+            ntohl(tcp->seq), ntohl(tcp->ack_seq));
+       //debug end
+
+        packet_store_add_tcp_ex(&g_store,
+            iph->ip_src, iph->ip_dst,
+            ntohs(tcp->th_sport), ntohs(tcp->th_dport),
+            flags,
+            ntohl(tcp->seq),
+            ntohl(tcp->ack_seq)
+        );
     } else if (iph->ip_p == IPPROTO_UDP) {
 
         const struct udphdr *udp = (const struct udphdr *)((const uint8_t *)iph + iphdr_len);
@@ -41,6 +66,7 @@ static void packet_handler(u_char *user, const struct pcap_pkthdr *hdr, const u_
         packet_store_add(&g_store, iph->ip_src, iph->ip_dst, 0, 0, IPPROTO_ICMP);
 
     }
+
 }
 
 // Launches a thread to capture every incoming packet
@@ -52,6 +78,8 @@ static void *capture_thread(void *arg)
     pcap_loop(cap->handle, 0, packet_handler, (u_char *)cap);
 
     cap->running = false;
+    //debug
+    printf("[Capture] Thread exiting\n");
     return NULL;
 }
 
@@ -98,8 +126,12 @@ void capture_stop(t_capture *cap)
 {
     if (!cap) return;
     if (cap->handle) {
+        //debug
+        printf("[Capture] Breaking loop\n");
         pcap_breakloop(cap->handle);
         pthread_join(cap->thread, NULL);
+        //debug
+        printf("[Capture] Closing handle\n");
         pcap_close(cap->handle);
     }
     packet_store_destroy(&g_store);

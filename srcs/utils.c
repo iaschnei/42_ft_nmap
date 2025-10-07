@@ -25,6 +25,92 @@ char *trim_whistespaces(char *s)
     return (s);
 }
 
+const char *resolve_service_name(uint16_t port, e_scan_type scan) {
+    // pick "tcp" or "udp" based on scan
+    const char *proto = (scan == SCAN_UDP) ? "udp" : "tcp";
+    struct servent *s = getservbyport(htons(port), proto);
+    if (s && s->s_name) return s->s_name;
+    return "Unassigned"; // fallback
+}
+
+// Used to add reports to our global structure
+t_port_report *get_or_create_report(const char *target, uint16_t port) {
+    for (size_t i = 0; i < g_report_count; ++i) {
+        if (strcmp(g_reports[i].target, target) == 0 && g_reports[i].port == port)
+            return &g_reports[i];
+    }
+
+    if (g_report_count >= MAX_TARGETS * MAX_PORTS)
+        return NULL;
+
+    t_port_report *rep = &g_reports[g_report_count++];
+    memset(rep, 0, sizeof(*rep));
+    strncpy(rep->target, target, MAX_IP_STRLEN - 1);
+    rep->port = port;
+
+    struct servent *s = getservbyport(htons(port), "tcp");
+    if (s) strncpy(rep->service, s->s_name, MAX_SERVICE_NAME - 1);
+    else strncpy(rep->service, "Unassigned", MAX_SERVICE_NAME - 1);
+
+    return rep;
+}
+
+void display_report(const t_config *config) {
+    printf("\nScan complete. Results:\n");
+
+    for (size_t t = 0; t < config->target_count; ++t) {
+        const char *target = config->targets[t];
+        printf("\nIP address: %s\n", target);
+
+        printf("\nOpen ports:\n");
+        printf("Port  Service     Results                          Conclusion\n");
+        printf("-------------------------------------------------------------\n");
+        for (size_t i = 0; i < g_report_count; ++i) {
+            t_port_report *rep = &g_reports[i];
+            if (strcmp(rep->target, target) != 0) continue;
+
+            bool is_open = false;
+            for (size_t j = 0; j < rep->result_count; ++j) {
+                if (rep->results[j].conclusion == RES_OPEN) {
+                    is_open = true;
+                    break;
+                }
+            }
+            if (!is_open) continue;
+
+            printf("%-5u %-11s ", rep->port, rep->service);
+            for (size_t j = 0; j < rep->result_count; ++j)
+                printf("%s ", rep->results[j].raw_info);
+            printf("Open\n");
+        }
+
+        printf("\nClosed/Filtered/Unfiltered ports:\n");
+        printf("Port  Service     Results                          Conclusion\n");
+        printf("-------------------------------------------------------------\n");
+        for (size_t i = 0; i < g_report_count; ++i) {
+            t_port_report *rep = &g_reports[i];
+            if (strcmp(rep->target, target) != 0) continue;
+
+            bool is_open = false;
+            for (size_t j = 0; j < rep->result_count; ++j) {
+                if (rep->results[j].conclusion == RES_OPEN) {
+                    is_open = true;
+                    break;
+                }
+            }
+            if (is_open) continue;
+
+            printf("%-5u %-11s ", rep->port, rep->service);
+            for (size_t j = 0; j < rep->result_count; ++j)
+                printf("%s ", rep->results[j].raw_info);
+
+            printf("%s\n", result_to_str(rep->results[0].conclusion));
+        }
+    }
+}
+
+
+
 
 /* -------------------------------------------------------------------------
  * DEBUG

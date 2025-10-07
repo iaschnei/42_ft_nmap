@@ -28,6 +28,8 @@ typedef struct {
     pthread_cond_t cond;
 } t_packet_store;
 
+extern t_packet_store g_store;
+
 void packet_store_init(t_packet_store *store);
 void packet_store_destroy(t_packet_store *store);
 void packet_store_add(t_packet_store *store,
@@ -35,5 +37,20 @@ void packet_store_add(t_packet_store *store,
                       uint16_t sport, uint16_t dport, uint8_t proto);
 bool packet_store_find(t_packet_store *store, const t_tuple *tuple);
 bool get_response_for(const t_tuple *tuple, int timeout_ms);
+
+void packet_store_add_tcp_ex(t_packet_store *store,
+                             struct in_addr src, struct in_addr dst,
+                             uint16_t sport, uint16_t dport,
+                             uint8_t tcp_flags, uint32_t seq, uint32_t ack);
+
+static inline void packet_store_add_tcp(t_packet_store *store,
+                                        struct in_addr src, struct in_addr dst,
+                                        uint16_t sport, uint16_t dport, uint8_t tcp_flags)
+{
+    packet_store_add_tcp_ex(store, src, dst, sport, dport, tcp_flags, 0, 0);
+}
+
+bool get_tcp_reply_info(const t_tuple *tuple, int timeout_ms,
+                        uint8_t *out_flags, uint32_t *out_seq, uint32_t *out_ack);
 
 #endif

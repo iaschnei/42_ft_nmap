@@ -94,9 +94,16 @@ int parse_args(int ac, char **av, t_config *config) {
     }
     if (ports) {
         if (!parse_ports(ports, config)) {
-            return 1; // error already printed
+            return 1;
         }
     }
+    if (config->port_count == 0) {
+        for (uint16_t port = 1; port <= 1024; ++port) {
+            add_port(config, port);
+        }
+    }
+    if (config->timeout_ms <= 0)
+        config->timeout_ms = DEFAULT_TIMEOUT_MS;
 
     
     //Final checks (probably useless since it has been checked before)
@@ -266,41 +273,47 @@ static int validate_and_set_scan(const char *s, t_config *config)
 {
     if (!config) return 0;
 
-    for (size_t i = 0; i < SCAN_TYPE_MAX; ++i) config->scans[i] = false;
+    // Reset all scans
+    for (size_t i = 0; i < SCAN_TYPE_MAX; ++i)
+        config->scans[i] = false;
 
+    // No value => enable all
     if (s == NULL) {
-        for (size_t i = 0; i < SCAN_TYPE_MAX; ++i) config->scans[i] = true;
+        for (size_t i = 0; i < SCAN_TYPE_MAX; ++i)
+            config->scans[i] = true;
         return 1;
     }
 
-    if (strcmp(s, "SYN") == 0) {
-        config->scans[SCAN_SYN] = true;
-        return 1;
-    }
-    if (strcmp(s, "NULL") == 0) {
-        config->scans[SCAN_NULL] = true;
-        return 1;
-    }
-    if (strcmp(s, "ACK") == 0) {
-        config->scans[SCAN_ACK] = true;
-        return 1;
-    }
-    if (strcmp(s, "FIN") == 0) {
-        config->scans[SCAN_FIN] = true;
-        return 1;
-    }
-    if (strcmp(s, "XMAS") == 0) {
-        config->scans[SCAN_XMAS] = true;
-        return 1;
-    }
-    if (strcmp(s, "UDP") == 0) {
-        config->scans[SCAN_UDP] = true;
-        return 1;
+    char *copy = strdup(s);
+    if (!copy) return 0;
+
+    char *token = strtok(copy, ",");
+    while (token) {
+        if (strcmp(token, "SYN") == 0)
+            config->scans[SCAN_SYN] = true;
+        else if (strcmp(token, "NULL") == 0)
+            config->scans[SCAN_NULL] = true;
+        else if (strcmp(token, "ACK") == 0)
+            config->scans[SCAN_ACK] = true;
+        else if (strcmp(token, "FIN") == 0)
+            config->scans[SCAN_FIN] = true;
+        else if (strcmp(token, "XMAS") == 0)
+            config->scans[SCAN_XMAS] = true;
+        else if (strcmp(token, "UDP") == 0)
+            config->scans[SCAN_UDP] = true;
+        else {
+            fprintf(stderr, "Error: invalid --scan value '%s'\n", token);
+            free(copy);
+            return 0;
+        }
+
+        token = strtok(NULL, ",");
     }
 
-    fprintf(stderr, "Error: invalid --scan value '%s' (allowed: SYN, NULL, ACK, FIN, XMAS, UDP)\n", s);
-    return 0;
+    free(copy);
+    return 1;
 }
+
 
 static int add_port(t_config *config, uint16_t port)
 {

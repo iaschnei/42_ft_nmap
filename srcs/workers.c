@@ -1,35 +1,41 @@
 #include "ft_nmap.h"
-#include "packet_store.h"
+#include "tcp_scan.h"
 
-
-// Worker's start function
 void *worker_thread_func(void *arg)
 {
     t_worker_args *args = (t_worker_args *)arg;
     scan_task task;
 
+    //debug
+    printf("[Worker %d] Started\n", args->id);
+
     while (task_queue_pop(args->queue, &task) == 1) {
 
-        printf("[Worker %d] Scanning %s:%d (%d)\n", args->id, task.target, task.port, task.scan);
+        // Only TCP scans here; UDP handled elsewhere if implemented
+        e_scan_type st = task.scan;
 
-        
-        // ... send packet via raw socket here (not yet implemented) ...
+        if (st == SCAN_UDP) {
+            // TODO: integrate UDP scan; skip for now
+            continue;
+        }
 
-        // Build tuple to wait for
-        t_tuple tuple;
-        inet_aton(task.target, &tuple.dst);
-        tuple.src.s_addr = 0;
-        tuple.sport = task.port;
-        tuple.dport = task.port;
-        tuple.proto = (task.scan == SCAN_UDP) ? IPPROTO_UDP : IPPROTO_TCP;
+        e_scan_result res = RES_UNKNOWN;
+        if (probe_tcp_target(task.target, (uint16_t)task.port, st, 2000, &res) < 0) {
+            fprintf(stderr, "[Worker %d] %s:%d %s -> error: %s", args->id, task.target, task.port, scan_type_to_string(st), strerror(errno));
+        } else {
+            const char *svc = resolve_service_name(task.port, st);
+            printf("Port %d %s %s(%s)\n",
+                task.port,
+                svc,
+                scan_type_to_string(st),
+                result_to_str(res));
 
-        bool got_reply = get_response_for(&tuple, args->config->timeout_ms);
-
-        printf("[Worker %d] %s:%u -> %s\n", args->id, task.target, task.port,
-               got_reply ? "REPLIED" : "TIMEOUT");
-
-        usleep(100000);
+            fflush(stdout);
+        }
     }
+
+    //debug
+    printf("[Worker %d] Exiting\n", args->id); // <--- ADD THIS LINE
 
     return NULL;
 }
@@ -38,6 +44,10 @@ void *worker_thread_func(void *arg)
 int launch_workers(t_task_queue *queue, const t_config *config)
 {
     int thread_count = config->speedup;
+
+    //debug
+    printf("Launching workers: speedup = %d\n", thread_count);
+
     if (thread_count <= 0) {
         // Run directly in main thread
         t_worker_args args = {.id = 0, .queue = queue, .config = config};
@@ -66,4 +76,29 @@ int launch_workers(t_task_queue *queue, const t_config *config)
     }
 
     return 0;
+}
+
+const char *result_to_str(e_scan_result res)
+{
+    switch (res) {
+        case RES_OPEN:             return "Open";
+        case RES_CLOSED:           return "Closed";
+        case RES_FILTERED:         return "Filtered";
+        case RES_UNFILTERED:       return "Unfiltered";
+        case RES_OPEN_OR_FILTERED: return "Open|Filtered";
+        default:                   return "Unknown";
+    }
+}
+
+const char *scan_type_to_string(e_scan_type t)
+{
+    switch (t) {
+        case SCAN_SYN:  return "SYN";
+        case SCAN_NULL: return "NULL";
+        case SCAN_ACK:  return "ACK";
+        case SCAN_FIN:  return "FIN";
+        case SCAN_XMAS: return "XMAS";
+        case SCAN_UDP:  return "UDP";
+        default:        return "UNKNOWN";
+    }
 }

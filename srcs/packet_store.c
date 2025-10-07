@@ -1,4 +1,5 @@
 #include "packet_store.h"
+#include "ft_nmap.h"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
@@ -89,4 +90,91 @@ bool get_response_for(const t_tuple *tuple, int timeout_ms)
     }
     pthread_mutex_unlock(&g_store.mutex);
     return true;
+}
+
+
+// ---- TCP reply info (flags + seq + ack) ----
+typedef struct s_tcp_reply_entry {
+    t_tuple tuple;
+    uint8_t flags;
+    uint32_t seq;
+    uint32_t ack;
+    struct timespec when;
+    struct s_tcp_reply_entry *next;
+} t_tcp_reply_entry;
+
+static t_tcp_reply_entry *g_tcp_replies = NULL;
+
+void packet_store_add_tcp_ex(t_packet_store *store,
+                             struct in_addr src, struct in_addr dst,
+                             uint16_t sport, uint16_t dport,
+                             uint8_t tcp_flags, uint32_t seq, uint32_t ack)
+{
+    (void)store; // we reuse the global store's mutex/cond
+    t_tcp_reply_entry *e = (t_tcp_reply_entry *)malloc(sizeof(*e));
+    if (!e) return;
+    e->tuple.src = src;
+    e->tuple.dst = dst;
+    e->tuple.sport = sport;
+    e->tuple.dport = dport;
+    e->tuple.proto = IPPROTO_TCP;
+    e->flags = tcp_flags;
+    e->seq = seq;
+    e->ack = ack;
+    clock_gettime(CLOCK_REALTIME, &e->when);
+
+    pthread_mutex_lock(&g_store.mutex);
+    e->next = g_tcp_replies;
+    g_tcp_replies = e;
+    // Signal generic presence as well for legacy queries
+    packet_store_add(&g_store, src, dst, sport, dport, IPPROTO_TCP);
+    pthread_cond_broadcast(&g_store.cond);
+    pthread_mutex_unlock(&g_store.mutex);
+}
+
+bool get_tcp_reply_info(const t_tuple *tuple, int timeout_ms,
+                        uint8_t *out_flags, uint32_t *out_seq, uint32_t *out_ack)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+    if (ts.tv_nsec >= 1000000000) {
+        ts.tv_sec++;
+        ts.tv_nsec -= 1000000000;
+    }
+
+    //debug
+    char src_str[INET_ADDRSTRLEN], dst_str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &tuple->src, src_str, sizeof(src_str));
+    inet_ntop(AF_INET, &tuple->dst, dst_str, sizeof(dst_str));
+    printf("[get_tcp_reply_info] Waiting for reply tuple: src=%s dst=%s sport=%u dport=%u proto=%u\n",
+        src_str, dst_str, tuple->sport, tuple->dport, tuple->proto);
+    //debug end
+
+
+
+    pthread_mutex_lock(&g_store.mutex);
+    while (1) {
+        for (t_tcp_reply_entry *p = g_tcp_replies; p; p = p->next) {
+            if (p->tuple.src.s_addr == tuple->src.s_addr &&
+                p->tuple.dst.s_addr == tuple->dst.s_addr &&
+                p->tuple.sport == tuple->sport &&
+                p->tuple.dport == tuple->dport &&
+                p->tuple.proto == tuple->proto) {
+                if (out_flags) *out_flags = p->flags;
+                if (out_seq)   *out_seq   = p->seq;
+                if (out_ack)   *out_ack   = p->ack;
+                pthread_mutex_unlock(&g_store.mutex);
+                return true;
+            }
+        }
+        if (pthread_cond_timedwait(&g_store.cond, &g_store.mutex, &ts) == ETIMEDOUT) {
+            pthread_mutex_unlock(&g_store.mutex);
+            return false;
+        }
+    }
+    // unreachable
+    pthread_mutex_unlock(&g_store.mutex);
+    return false;
 }
